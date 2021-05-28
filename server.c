@@ -12,37 +12,33 @@
 #include <unistd.h>
 
 static int do_listen(const char* host, int port) {
-    struct addrinfo ai_hints;
-    struct addrinfo* ai_list = NULL;
-    char portstr[16];
-    sprintf(portstr, "%d", port);
-    memset(&ai_list, 0, sizeof(ai_hints));
-
-    ai_hints.ai_socktype = SOCK_STREAM;
-    ai_hints.ai_protocol = IPPROTO_TCP;
-
-    int status = getaddrinfo(host, portstr, &ai_hints, &ai_list);
-    if (status != 0) {
-        return -1;
-    }
-
-    int fd = socket(ai_list->ai_family, ai_list->ai_socktype, 0);
-    if (fd < 0) {
-        freeaddrinfo(ai_list);
-        return -1;
-    }
-
-    status = bind(fd, (struct sockaddr*)ai_list->ai_addr, ai_list->ai_addrlen);
-    if (status != 0) {
-        close(fd);
-        freeaddrinfo(ai_list);
-        return -1;
-    }
-
-    listen(fd, 30);
-
-    printf("do_listen success fd:%d\n", fd);
-    return fd;
+	int sockfd;
+	struct sockaddr_in serv_addr;
+	
+	/* First call to socket() function */
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	
+	if (sockfd < 0) {
+		perror("ERROR opening socket");
+		exit(1);
+	}
+	
+	/* Initialize socket structure */
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+	
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = INADDR_ANY;
+	serv_addr.sin_port = htons(port);
+	
+	/* Now bind the host address using bind() call.*/
+	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+		perror("ERROR on binding");
+		exit(1);
+	}
+		
+	listen(sockfd, 30);
+    printf("do_listen success sockfd:%d\n", sockfd);
+    return sockfd;
 }
 
 int main(int argc, char** argv) {
@@ -70,7 +66,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    int listen_fd = do_listen("127.0.0.1", 8001);
+    int listen_fd = do_listen("0.0.0.0", 8001);
     if (listen_fd < 0) {
         printf("do listen fail");
         return -1;
@@ -82,7 +78,7 @@ int main(int argc, char** argv) {
     epoll_ctl(epfd, EPOLL_CTL_ADD, listen_fd, &ee);
 
     for(;;) {
-        printf("before epoll epoll_wait\n");
+        printf("################################ new loop start, before epoll epoll_wait\n");
         struct epoll_event ev[16];
         int n = epoll_wait(epfd, ev, 16, -1);
         if (n == -1) {
@@ -92,7 +88,8 @@ int main(int argc, char** argv) {
 
         printf("after epoll_wait event n:%d\n", n);
 
-        for (int i = 0; i < n; i ++) {
+		int i = 0;
+        for (i = 0; i < n; i ++) {
             struct epoll_event* e = &ev[i];
             if (e->data.fd == listen_fd) {
                 struct sockaddr s;
@@ -130,7 +127,7 @@ int main(int argc, char** argv) {
                         break;
                     }
                     else {
-                        printf("----%c%c\n", buffer[0], buffer[1]);
+                        printf("rcv: %c%c\n", buffer[0], buffer[1]);
                     }
                 }
             }

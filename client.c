@@ -43,44 +43,30 @@ static void free_buffer(struct WRITE_BUFFER* wb) {
 }
 
 static int try_connect(const char* host, int port) {
-    struct addrinfo ai_hints;
-    struct addrinfo* ai_list = NULL;
+	int sockfd, n;
+	struct sockaddr_in serv_addr;
+	struct hostent *server;
 
-    char portstr[16];
-    sprintf(portstr, "%d", port);
-    memset(&ai_hints, 0, sizeof(ai_hints));
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	
+	server = gethostbyname(host);
+	
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+	serv_addr.sin_family = AF_INET;
+	bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+	serv_addr.sin_port = htons(port);
 
-    ai_hints.ai_family = AF_INET;
-    ai_hints.ai_socktype = SOCK_STREAM;
-    ai_hints.ai_protocol = IPPROTO_TCP;
+	if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+		printf("connect to server fail \n");
+		exit(1);
+	}
 
-    int status = getaddrinfo(host, portstr, &ai_hints, &ai_list);
-    if (status != 0) {
-        freeaddrinfo(ai_list);
-        printf("getaddrinfo fail");
-        return -1;
-    }
-
-    int fd = socket(ai_list->ai_family, ai_list->ai_socktype, ai_list->ai_protocol);
-    if (fd < 0) {
-        freeaddrinfo(ai_list);
-        return -1;
-    }
-    status = connect(fd, ai_list->ai_addr, ai_list->ai_addrlen);
-    if (status != 0) {
-        freeaddrinfo(ai_list);
-        close(fd);
-        printf("connect fail");
-        return -1;
-    }
-    
-    freeaddrinfo(ai_list);
     printf("connect to server success \n");
-    return fd;
+    return sockfd;
 }
 
 static void input(int epfd, int fd, int event) {
-    printf("begin input\n");
+    printf("################################ try to input, end with \'\\n\'\n");
     char buf[MAX_INPUT_CHAR];
     int idx = 0;
     for (;;) {
@@ -126,8 +112,7 @@ static void input(int epfd, int fd, int event) {
        }
        memcpy(wb->buf, buf, sizeof(char) * idx);
     }
-    printf("%s\n", buf);
-    printf("end input\n");
+    printf("you have input: %s\n", buf);
 }
 
 static void output(int epfd, int fd, int event) {
@@ -143,13 +128,16 @@ static void output(int epfd, int fd, int event) {
             abort();
         }
 
-        printf("wsize:%d n:%d\n", wsize, n);
+      
         printf("<<<<");
         char* ptr = (char*)wb->ptr;
-        for (int i = 0; i < n; i ++) {
+		int i = 0;
+        for (i = 0; i < n; i ++) {
             printf("%c", ptr[i]);
         }
+		printf(", wsize:%d n:%d\n", wsize, n);
         printf("\n");
+		
 
         wb->ptr += wsize;
         if (wb->ptr >= wb->buf + wb->size) {
@@ -197,7 +185,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    int fd = try_connect("127.0.0.1", 8001);
+    int fd = try_connect("localhost", 8001);
     if (fd < 0) {
         return -1;
     }
@@ -214,36 +202,19 @@ int main(int argc, char** argv) {
     for (;;) {
         input(epfd, fd, socket_event | EPOLLOUT);
 
-        printf("before epoll_wait\n");
+        /* interested in stdout, it will return gt 0 anytime */
         struct epoll_event ev[1];
         int n = epoll_wait(epfd, ev, 1, -1);
         if (n == -1) {
             printf("epoll_wait error %d", errno);
             break;
         }
-        printf("after epoll_wait\n");
-        
-        for (int i = 0; i < n; i ++) {
+		
+        int i = 0;
+        for (i = 0; i < n; i ++) {
             struct epoll_event* e = &ev[i];
             int flag = e->events;
-            int r = (flag & EPOLLIN) != 0;
             int w = (flag & EPOLLOUT) != 0;
-
-            if (r) {
-                printf("begin to read fd:%d\n", fd);
-                char read_buf[MAX_READ] = {0};
-                int rn = read(fd, read_buf, MAX_READ); 
-                if (rn <= 0) {
-                    goto _EXIT;
-                } 
-
-                printf(">>>>");
-                for (int j = 0; j < rn; j ++) {
-                    printf("%c", read_buf[j]);
-                }
-                printf("\n");
-            }
-
             if (w) {
                 output(epfd, fd, socket_event);
             }
