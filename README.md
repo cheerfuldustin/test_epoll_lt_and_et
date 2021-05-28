@@ -4,7 +4,7 @@
 # 获取仓库
 在linux机器上，输入如下指令
 ```
-git clone https://github.com/Manistein/test_epoll_lt_and_et.git
+git clone https://github.com/cheerfuldustin/test_epoll_lt_and_et.git
 ```
 
 # 编译
